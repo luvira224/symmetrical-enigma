@@ -1,0 +1,318 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Dynamic Weighted Category Tracker</title>
+<style>
+:root{--bg:#f2f4f7;--cd:#fff;--tx:#151a22;--mu:#667085;--ln:#e2e6ed;--pos:#15803d;--neg:#dc2626;--neu:#8a93a3;--ac:#3b4cca;color-scheme:light}
+@media(prefers-color-scheme:dark){:root{--bg:#0e1116;--cd:#171b23;--tx:#eceff5;--mu:#98a1b3;--ln:#283040;--pos:#34d399;--neg:#f87171;--neu:#6b7587;--ac:#8c9bff;color-scheme:dark}}
+*{box-sizing:border-box}
+body{margin:0;font:14px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;background:var(--bg);color:var(--tx)}
+header{position:sticky;top:0;z-index:5;display:flex;flex-wrap:wrap;gap:8px;align-items:center;justify-content:space-between;padding:10px 16px;background:var(--cd);border-bottom:1px solid var(--ln)}
+h1{font-size:16px;margin:0}h2{margin:0;font-size:24px}h3{margin:0 0 8px;font-size:15px}
+.row{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+main{max-width:980px;margin:0 auto;padding:14px;display:grid;gap:14px}
+.card{background:var(--cd);border:1px solid var(--ln);border-radius:12px;padding:16px}
+button,select,input,textarea{font:inherit;color:inherit;background:var(--cd);border:1px solid var(--ln);border-radius:8px;padding:6px 10px}
+button{cursor:pointer}button:hover,button:focus-visible{border-color:var(--ac)}
+:focus-visible{outline:2px solid var(--ac);outline-offset:1px}
+.pri{background:var(--ac);border-color:var(--ac);color:#fff}.dng{color:var(--neg)}
+.hero{display:flex;flex-wrap:wrap;gap:16px;justify-content:space-between;align-items:center}
+.score{text-align:center;min-width:150px}.big{font-size:58px;font-weight:800;line-height:1;letter-spacing:-.02em}
+.pos{color:var(--pos)}.neg{color:var(--neg)}.neu,.mu{color:var(--mu)}
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px}
+.stat{background:var(--cd);border:1px solid var(--ln);border-radius:10px;padding:12px}.stat b{display:block;font-size:22px}
+.cat{padding:12px 0;border-top:1px solid var(--ln);cursor:pointer}
+.ch{display:flex;justify-content:space-between;align-items:baseline;gap:8px}
+.bp{font-size:24px;font-weight:700}
+.dot{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:8px}
+.bar{position:relative;height:12px;margin:6px 0;background:var(--ln);border-radius:6px;overflow:hidden}
+.bar span{display:block;height:100%;border-radius:6px;transition:width .3s}
+.bar u{position:absolute;left:50%;top:0;bottom:0;width:2px;background:var(--tx);opacity:.35}
+.bar s{position:absolute;top:0;bottom:0;width:3px;background:var(--tx);transform:translateX(-50%)}
+.meta{font-size:12px;color:var(--mu)}
+.mrow{display:flex;flex-wrap:wrap;gap:8px;align-items:center;padding:8px 0;border-top:1px solid var(--ln)}
+.mrow b{flex:1;min-width:120px}.mrow input{width:84px}
+.ent{padding:10px 0;border-top:1px solid var(--ln)}.ent .row{margin-top:6px}
+.val{font-weight:700;padding:1px 9px;border-radius:99px;background:color-mix(in srgb,currentColor 14%,transparent)}
+.chip{font-size:11px;padding:1px 8px;border-radius:99px;color:#fff;margin-right:4px}
+dialog{border:1px solid var(--ln);border-radius:12px;background:var(--cd);color:var(--tx);width:min(580px,94vw);max-height:90vh;padding:18px}
+dialog::backdrop{background:#0009}
+label,.lb{display:block;margin:8px 0;font-size:12px;color:var(--mu)}
+label input,label select,label textarea{display:block;width:100%;margin-top:3px;color:var(--tx)}
+.ck{display:inline-flex;gap:6px;align-items:center;margin:4px 10px 4px 0;color:var(--tx);font-size:13px}.ck input{width:auto;margin:0}
+.err{color:var(--neg);min-height:1em;margin:8px 0 0}
+.cp{display:flex;align-items:center;justify-content:space-between;gap:8px}.cp input[type=number]{width:96px;margin:0}.cp select{width:auto;margin:0}.cp .ck{flex:1;margin:4px 0}
+#toast{position:fixed;bottom:16px;left:50%;transform:translateX(-50%);background:var(--tx);color:var(--bg);padding:8px 14px;border-radius:8px;display:none;z-index:99}
+svg{width:100%;height:auto}
+</style>
+</head>
+<body>
+<header>
+  <h1>Dynamic Weighted Category Tracker</h1>
+  <div class="row"><select id="sel" aria-label="Subject"></select>
+  <button data-a="newSub">+ Subject</button><button data-a="exp">Export JSON</button><button data-a="imp">Import JSON</button></div>
+</header>
+<main id="app"></main>
+<dialog id="det"></dialog><dialog id="dlg"></dialog>
+<input type="file" id="file" accept="application/json,.json" hidden>
+<div id="toast" role="status"></div>
+<script>
+const KEY='dwct.v1',COL=['#3b4cca','#0ea5e9','#10b981','#f59e0b','#ec4899','#8b5cf6','#14b8a6','#f97316','#84cc16','#ef4444'];
+const $=s=>document.querySelector(s),uid=()=>Math.random().toString(36).slice(2,9)+Date.now().toString(36),
+sid=x=>String(x??'').replace(/[^\w-]/g,'')||uid(),r2=n=>Math.round(n*100)/100,f=n=>String(r2(n)),
+esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])),
+sg=v=>(v>0?'+':v<0?'−':'')+f(Math.abs(v)),cls=(b,r)=>!r||b===50?'neu':b>50?'pos':'neg',
+toLocal=t=>new Date(t-new Date(t).getTimezoneOffset()*6e4).toISOString().slice(0,16);
+let S=load(),detId=null,hf='all';
+const cur=()=>S.subjects.find(s=>s.id===S.cur);
+
+function load(){try{const d=localStorage.getItem(KEY);if(d)return clean(JSON.parse(d))}catch(e){}return{subjects:[],cur:null}}
+function save(){try{localStorage.setItem(KEY,JSON.stringify(S))}catch(e){toast('Could not save: browser storage is unavailable.')}}
+function toast(m){const t=$('#toast');t.textContent=m;t.style.display='block';clearTimeout(toast.t);toast.t=setTimeout(()=>t.style.display='none',2800)}
+
+function cleanCv(o,ids){
+  if(!o||typeof o!=='object')return undefined;
+  const r={};for(const k in o){const id=sid(k),v=r2(Math.max(-100,Math.min(100,+o[k]||0)));if(ids.includes(id)&&v!==0)r[id]=v}
+  return Object.keys(r).length?r:undefined;
+}
+function clean(d){
+  if(!d||!Array.isArray(d.subjects))throw Error('no subjects array');
+  const subjects=d.subjects.map(s=>{
+    if(!s||typeof s.title!=='string')throw Error('subject without title');
+    const cats=(Array.isArray(s.cats)?s.cats:[]).map((c,i)=>({id:sid(c.id),name:String(c.name??'Category'),desc:String(c.desc??''),weight:Math.max(0,+c.weight||0),target:(c.target==null||c.target===''||!isFinite(+c.target))?null:r2(Math.min(100,Math.max(0,+c.target))),color:/^#[0-9a-f]{6}$/i.test(c.color)?c.color:COL[i%COL.length]}));
+    rebalance(cats);const ids=cats.map(c=>c.id);
+    const logs=(Array.isArray(s.logs)?s.logs:[]).map(l=>({id:sid(l.id),title:String(l.title??''),desc:String(l.desc??''),value:r2(Math.max(-100,Math.min(100,+l.value||0))),cats:(Array.isArray(l.cats)?l.cats:[]).map(sid).filter(x=>ids.includes(x)),ts:+l.ts||Date.now(),upd:+l.upd||0,cv:cleanCv(l.cv,ids)})).filter(l=>l.value!==0);
+    return{id:sid(s.id),title:s.title,desc:String(s.desc??''),cats,logs};
+  });
+  return{subjects,cur:subjects.some(s=>s.id===d.cur)?d.cur:subjects[0]?.id??null};
+}
+
+/* Keep category weights totalling exactly 100. keepId = the weight the user just set; others scale proportionally. */
+function rebalance(cats,keepId){
+  const n=cats.length;if(!n)return;
+  if(n===1){cats[0].weight=100;return}
+  const k=cats.find(c=>c.id===keepId);
+  if(k)k.weight=r2(Math.min(100,Math.max(0,k.weight)));
+  const o=cats.filter(c=>c!==k),rem=100-(k?k.weight:0),s=o.reduce((a,c)=>a+c.weight,0);
+  o.forEach(c=>c.weight=r2(s>0?c.weight/s*rem:rem/o.length));
+  const diff=r2(100-cats.reduce((a,c)=>a+c.weight,0));
+  const t=o.length?o.reduce((a,c)=>c.weight>a.weight?c:a):k;t.weight=r2(t.weight+diff);
+}
+
+/* Behavioral % = pos/(pos+|neg|)*100. Overall = sum(normalized weight of rated categories * behavioral %). */
+function calc(s){
+  const cs=s.cats.map(c=>{let p=0,n=0;
+    const logs=s.logs.filter(l=>l.cats.includes(c.id)).sort((a,b)=>a.ts-b.ts);
+    logs.forEach(l=>{const v=cv(l,c.id);v>0?p+=v:n-=v});
+    const rated=p+n>0;return{c,p,n,net:p-n,rated,b:rated?p/(p+n)*100:50,logs}});
+  const R=cs.filter(x=>x.rated),rw=R.reduce((a,x)=>a+x.c.weight,0);
+  cs.forEach(x=>{x.nw=x.rated?(rw>0?x.c.weight/rw*100:100/R.length):0;x.ct=x.nw*x.b/100});
+  const tp=cs.reduce((a,x)=>a+x.p,0),tn=cs.reduce((a,x)=>a+x.n,0);
+  return{cs,overall:R.length?R.reduce((a,x)=>a+x.ct,0):null,ob:tp+tn>0?tp/(tp+tn)*100:null,
+    pos:s.logs.filter(l=>vs(l).some(v=>v>0)).length,neg:s.logs.filter(l=>vs(l).some(v=>v<0)).length};
+}
+
+function chart(x){
+  let p=0,n=0;const pts=x.logs.map(l=>{const v=cv(l,x.c.id);v>0?p+=v:n-=v;return p/(p+n)*100});
+  if(!pts.length)return'<p class="mu">No entries yet.</p>';
+  const W=300,H=110,px=i=>pts.length>1?10+i*(W-20)/(pts.length-1):W/2,py=v=>H-10-v*(H-20)/100;
+  return`<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Behavioral percentage history"><line x1="0" x2="${W}" y1="${py(50)}" y2="${py(50)}" stroke="var(--ln)" stroke-dasharray="4"/>${x.c.target!=null?`<line x1="0" x2="${W}" y1="${py(x.c.target)}" y2="${py(x.c.target)}" stroke="${x.c.color}" stroke-dasharray="2 3" opacity=".8"/>`:''}<polyline fill="none" stroke="${x.c.color}" stroke-width="2" points="${pts.map((v,i)=>px(i)+','+py(v)).join(' ')}"/>${pts.map((v,i)=>`<circle cx="${px(i)}" cy="${py(v)}" r="3.5" fill="${x.c.color}"><title>After entry ${i+1}: ${f(v)}%</title></circle>`).join('')}</svg><div class="meta">Behavioral % after each entry. Grey dashed line = 50% neutral${x.c.target!=null?`; colored dashed line = target ${f(x.c.target)}%`:''}.</div>`;
+}
+
+function ent(l,s){
+  const ch=l.cats.map(id=>s.cats.find(c=>c.id===id)).filter(Boolean).map(c=>`<span class="chip" style="background:${c.color}">${esc(c.name)} ${sg(cv(l,c.id))}</span>`).join('')||'<span class="meta">untagged</span>';
+  return`<div class="ent"><div class="ch"><b>${esc(l.title)}</b><span class="val ${{Positive:'pos',Negative:'neg',Mixed:'neu'}[kd(l)]}">${kd(l)}</span></div><div>${ch} <span class="meta">${new Date(l.ts).toLocaleString()}${l.upd?' · edited '+new Date(l.upd).toLocaleString():''}</span></div>${l.desc?`<div class="mu">${esc(l.desc)}</div>`:''}<div class="row"><button data-a="editLog" data-id="${l.id}">Edit</button><button class="dng" data-a="delLog" data-id="${l.id}">Delete</button></div></div>`;
+}
+
+function render(){
+  save();
+  $('#sel').innerHTML=S.subjects.map(s=>`<option value="${s.id}"${s.id===S.cur?' selected':''}>${esc(s.title)}</option>`).join('')||'<option>No subjects</option>';
+  const s=cur(),A=$('#app');
+  if(!s){A.innerHTML='<div class="card"><h2>Evaluate anything</h2><p class="mu">Create a subject (a product, a trait, an activity, a decision) and define the categories that matter for it. Then log positive and negative observations and watch the weighted score update.</p><button class="pri" data-a="newSub">Create your first subject</button></div>';return fillDet()}
+  const k=calc(s),o=k.overall,wsum=s.cats.reduce((a,c)=>a+c.weight,0);
+  if(hf!=='all'&&!s.cats.some(c=>c.id===hf))hf='all';
+  A.innerHTML=`
+<section class="card hero"><div><h2>${esc(s.title)}</h2><p class="mu">${esc(s.desc)}</p>
+<div class="row"><button class="pri" data-a="addLog">+ Log entry</button><button data-a="editSub">Edit subject</button><button class="dng" data-a="delSub">Delete subject</button></div></div>
+<div class="score"><div class="big ${cls(o??50,o!==null)}">${o===null?'Unrated':o.toFixed(1)}</div><div class="mu">Overall score / 100</div></div></section>
+<div class="stats">
+<div class="stat"><span class="mu">Overall behavioral %</span><b class="${cls(k.ob??50,k.ob!==null)}">${k.ob===null?'Unrated':f(k.ob)+'%'}</b></div>
+<div class="stat"><span class="mu">Log entries</span><b>${s.logs.length}</b></div>
+<div class="stat"><span class="mu">Positive entries</span><b class="pos">${k.pos}</b></div>
+<div class="stat"><span class="mu">Negative entries</span><b class="neg">${k.neg}</b></div></div>
+<section class="card"><h3>Dynamic weighted category breakdown</h3>${k.cs.map(x=>`
+<div class="cat" data-a="detail" data-id="${x.c.id}"><div class="ch"><b><i class="dot" style="background:${x.c.color}"></i>${esc(x.c.name)}</b><span class="bp ${cls(x.b,x.rated)}">${x.rated?f(x.b)+'%':'Unrated'}</span></div>
+<div class="bar"><span style="width:${x.rated?x.b:0}%;background:${x.c.color}"></span><u></u>${x.c.target!=null?`<s style="left:${x.c.target}%" title="Target ${f(x.c.target)}%"></s>`:''}</div>
+<div class="meta">Weight ${f(x.c.weight)}%${x.rated?` (effective ${f(x.nw)}%)`:' (excluded until rated)'}${tg(x)} · <span class="pos">+${f(x.p)}</span> · <span class="neg">−${f(x.n)}</span> · Net ${sg(x.net)}${x.rated?` · Contribution ${x.ct.toFixed(1)} pts`:''}</div>
+${x.c.desc?`<div class="mu">${esc(x.c.desc)}</div>`:''}</div>`).join('')||'<p class="mu">No categories yet. Add one below.</p>'}</section>
+<section class="card"><div class="ch"><h3>Category management</h3><div class="row"><button data-a="addCat">+ Category</button><button data-a="equal">Equalize weights</button></div></div>
+<div class="row" style="margin:8px 0"><input id="qc" placeholder="New category name" maxlength="60" style="flex:1;min-width:160px" aria-label="New category name"><input type="color" id="qcc" value="${COL[s.cats.length%COL.length]}" style="width:40px;height:32px;padding:2px" aria-label="Color for new category"><button class="pri" data-a="quickCat">Add category</button></div><p class="meta">Weights always total ${f(wsum)}%. Changing one rescales the others proportionally. Categories with no entries are left out of the overall score and the remaining weights are normalized.</p>
+${s.cats.map((c,i)=>`<div class="mrow"><i class="dot" style="background:${c.color}"></i><b>${esc(c.name)}</b><span class="meta">${k.cs[i].logs.length} entries</span><input type="color" value="${c.color}" data-c="${c.id}" style="width:40px;height:32px;padding:2px" aria-label="Color for ${esc(c.name)}"><span class="meta">Weight</span><input type="number" min="0" max="100" step="any" value="${f(c.weight)}" data-w="${c.id}" aria-label="Weight for ${esc(c.name)}"> %<span class="meta">Target</span><input type="number" min="0" max="100" step="any" placeholder="none" value="${c.target??''}" data-t="${c.id}" aria-label="Target percentage for ${esc(c.name)}"> %<button data-a="editCat" data-id="${c.id}">Edit</button><button class="dng" data-a="delCat" data-id="${c.id}">Delete</button></div>`).join('')}</section>
+<section class="card"><div class="ch"><h3>History</h3><select id="hf" aria-label="Filter history by category"><option value="all">All categories</option>${s.cats.map(c=>`<option value="${c.id}"${c.id===hf?' selected':''}>${esc(c.name)}</option>`).join('')}</select></div>${hist(s)||'<p class="mu">No entries yet. Use “+ Log entry” to record your first observation.</p>'}</section>`;
+  fillDet();
+}
+
+function fillDet(){if($('#det').open)showDet(detId)}
+function showDet(id){
+  const s=cur(),x=s&&calc(s).cs.find(x=>x.c.id===id),d=$('#det');
+  if(!x){d.close();return}
+  detId=id;
+  d.innerHTML=`<div class="ch"><h3><i class="dot" style="background:${x.c.color}"></i>${esc(x.c.name)}</h3><button data-a="closeDet">Close</button></div><p class="mu">${esc(x.c.desc)}</p>
+<div class="stats"><div class="stat"><span class="mu">Weight</span><b>${f(x.c.weight)}%</b></div>
+<div class="stat"><span class="mu">Behavioral %</span><b class="${cls(x.b,x.rated)}">${x.rated?f(x.b)+'%':'Unrated'}</b></div>
+<div class="stat"><span class="mu">Positive</span><b class="pos">+${f(x.p)}</b></div>
+<div class="stat"><span class="mu">Negative</span><b class="neg">−${f(x.n)}</b></div>
+<div class="stat"><span class="mu">Net score</span><b>${sg(x.net)}</b></div>${x.c.target!=null?`<div class="stat"><span class="mu">Target</span><b>${f(x.c.target)}%</b><span class="meta">${x.rated?(x.b>=x.c.target?'met':f(x.c.target-x.b)+' pts short'):'unrated'}</span></div>`:''}</div>
+<h3 style="margin-top:14px">Behavioral % history</h3>${chart(x)}
+<h3 style="margin-top:14px">Entries (${x.logs.length})</h3>${[...x.logs].reverse().map(l=>ent(l,s)).join('')||'<p class="mu">No entries tagged with this category.</p>'}
+<div class="row" style="margin-top:10px"><button class="pri" data-a="addLog" data-id="${id}">+ Log entry here</button></div>`;
+  if(!d.open)d.showModal();
+}
+
+/* Generic modal form */
+const fld=q=>q.t==='cp'?`<div class="lb">${q.l}${q.o.length?q.o.map(([v,t,p,ng])=>`<div class="cp"><label class="ck"><input type="checkbox" name="${q.k}" value="${v}"${q.v.includes(v)?' checked':''}>${esc(t)}</label><select name="s_${v}" aria-label="Sign for ${esc(t)}"><option value="p">+</option><option value="n"${ng?' selected':''}>−</option></select><input type="number" name="p_${v}" min="0.01" max="100" step="any" placeholder="points" value="${p}" aria-label="Points for ${esc(t)}"></div>`).join(''):'<div class="meta">No categories yet. Add some below.</div>'}</div>`:q.t==='checks'?`<div class="lb">${q.l}<div>${q.o.map(([v,t])=>`<label class="ck"><input type="checkbox" name="${q.k}" value="${v}"${q.v.includes(v)?' checked':''}>${esc(t)}</label>`).join('')}</div></div>`
+:`<label>${q.l}${q.t==='area'?`<textarea name="${q.k}" rows="3">${esc(q.v)}</textarea>`:q.t==='sel'?`<select name="${q.k}">${q.o.map(([v,t])=>`<option value="${v}"${v===q.v?' selected':''}>${t}</option>`).join('')}</select>`:`<input name="${q.k}" type="${q.t||'text'}" value="${esc(q.v??'')}" ${q.x||''}>`}</label>`;
+function form(title,fl,ok){
+  const d=$('#dlg');
+  d.innerHTML=`<form><h3>${title}</h3>${fl.map(q=>fld(q)).join('')}<div class="row"><button type="button" data-a="closeF">Cancel</button><button class="pri">Save</button></div><p class="err"></p></form>`;
+  d.querySelector('form').onsubmit=e=>{e.preventDefault();const m=ok(new FormData(e.target));if(m)d.querySelector('.err').textContent=m;else{d.close();render()}};
+  d.showModal();
+}
+function subForm(edit){
+  const s=edit?cur():null;
+  form(s?'Edit subject':'New subject',[
+    {k:'title',l:'Title (e.g. Powerbeats Pro 2, Roguish charm)',v:s?.title||'',x:'required maxlength="100"'},
+    {k:'desc',l:'Description (optional)',t:'area',v:s?.desc||''},
+    ...(s?[]:[{k:'cats',l:'Categories: one per line or comma separated (optional, you can add them later). Weights start equal.',t:'area',v:''}])
+  ],fd=>{
+    const title=fd.get('title').trim(),desc=fd.get('desc').trim();
+    if(!title)return'Title is required.';
+    if(s){Object.assign(s,{title,desc});return}
+    const names=[...new Set(fd.get('cats').split(/[\n,]+/).map(x=>x.trim()).filter(Boolean))];
+    const cats=names.map((name,i)=>({id:uid(),name,desc:'',weight:100/names.length,color:COL[i%COL.length]}));
+    rebalance(cats);const n={id:uid(),title,desc,cats,logs:[]};S.subjects.push(n);S.cur=n.id;
+  });
+}
+function catForm(id){
+  const s=cur(),c=id?s.cats.find(c=>c.id===id):null;
+  form(c?'Edit category':'New category',[
+    {k:'name',l:'Name',v:c?.name||'',x:'required maxlength="60"'},
+    {k:'desc',l:'Brief description (optional)',t:'area',v:c?.desc||''},
+    {k:'color',l:'Color',t:'color',v:c?.color||COL[s.cats.length%COL.length],x:'style="height:36px;padding:2px"'},
+    {k:'target',l:'Target behavioral % (optional, 0 to 100)',t:'number',v:c?.target??'',x:'step="any" min="0" max="100"'}
+  ],fd=>{
+    const name=fd.get('name').trim(),desc=fd.get('desc').trim();
+    if(!name)return'Name is required.';
+    if(s.cats.some(x=>x!==c&&x.name.toLowerCase()===name.toLowerCase()))return'A category with that name already exists.';
+    const color=fd.get('color'),tr=fd.get('target').trim(),target=tr===''?null:r2(parseFloat(tr));
+    if(target!==null&&(!isFinite(target)||target<0||target>100))return'Target must be a number from 0 to 100.';
+    if(!/^#[0-9a-f]{6}$/i.test(color))return'Pick a valid color.';
+    if(c){Object.assign(c,{name,desc,color,target});return}
+    addCat(s,name,desc,color).target=target;
+  });
+}
+function logForm(id,pre){
+  const s=cur(),l=id?s.logs.find(l=>l.id===id):null,def=toLocal(l?.ts||Date.now());
+  form(l?'Edit entry':'New log entry',[
+    {k:'title',l:'Entry title',v:l?.title||'',x:'required maxlength="120"'},
+    {k:'desc',l:'Description or observation (optional)',t:'area',v:l?.desc||''},
+    {k:'pts',l:'Default points, 0.01 to 100 (used for ticked categories with no points of their own)',t:'number',v:l&&!l.cv?Math.abs(l.value):'',x:'step="any" min="0.01" max="100"'},
+    {k:'cats',l:'Categories: tick, pick + or −, and enter points. You can mix positive and negative in one entry.',t:'cp',v:l?l.cats:pre?[pre]:[],o:s.cats.map(c=>[c.id,c.name,l&&l.cats.includes(c.id)?Math.abs(cv(l,c.id)):'',l&&l.cats.includes(c.id)&&cv(l,c.id)<0])},
+    {k:'newcats',l:'Add new categories (optional). Comma separated, with points like Mischievous:10, Rebelliousness:20',v:'',x:'placeholder="Mischievous:10, Rebelliousness:20"'},
+    {k:'ts',l:'Date and time (stamped automatically when you save; change only to backdate)',t:'datetime-local',v:def,x:'required'}
+  ],fd=>{
+    const title=fd.get('title').trim(),desc=fd.get('desc').trim(),dp=fd.get('pts').trim()===''?null:r2(parseFloat(fd.get('pts'))),cs=fd.getAll('cats'),nn=[...new Set(fd.get('newcats').split(/[\n,]+/).map(x=>x.trim()).filter(Boolean))].map(t=>{const m=t.match(/^(.*?)\s*[:=]\s*([+\-−]?)(\d+(?:\.\d+)?)$/);return m?{name:m[1].trim(),p:r2(parseFloat(m[3])),neg:m[2]==='-'||m[2]==='−'}:{name:t,p:null,neg:false}}).filter(x=>x.name),ts=fd.get('ts')===def?(l?l.ts:Date.now()):new Date(fd.get('ts')).getTime();
+    if(!title)return'Title is required.';
+    if(dp!==null&&(!isFinite(dp)||dp<=0||dp>100))return'Default points must be between 0.01 and 100.';
+    if(!cs.length&&!nn.length)return'Select or add at least one category.';
+    if(!isFinite(ts))return'Enter a valid date and time.';
+    const cv={};
+    for(const id of cs){
+      const raw=fd.get('p_'+id).trim(),p=raw===''?dp:r2(parseFloat(raw));
+      if(p===null||!isFinite(p)||p<=0||p>100)return`Enter points (0.01 to 100) for "${s.cats.find(c=>c.id===id).name}", or set a default.`;
+      cv[id]=(fd.get('s_'+id)==='n'?-1:1)*p;
+    }
+    for(const n of nn){const p=n.p??dp;if(p===null||!isFinite(p)||p<=0||p>100)return`Add points for new category "${n.name}" (like ${n.name}:10) or set a default.`}
+    nn.forEach(n=>{const ex=s.cats.find(c=>c.name.toLowerCase()===n.name.toLowerCase())||addCat(s,n.name);if(!cs.includes(ex.id))cs.push(ex.id);cv[ex.id]=(n.neg?-1:1)*(n.p??dp)});
+    const value=Object.values(cv).reduce((a,v)=>Math.abs(v)>Math.abs(a)?v:a);
+    if(l)Object.assign(l,{title,desc,value,cats:cs,cv,ts,upd:Date.now()});else s.logs.push({id:uid(),title,desc,value,cats:cs,cv,ts,upd:0});
+  });
+}
+
+function addCat(s,name,desc='',color){
+  const n={id:uid(),name,desc,target:null,weight:100/(s.cats.length+1),color:/^#[0-9a-f]{6}$/i.test(color)?color:COL[s.cats.length%COL.length]};
+  s.cats.push(n);rebalance(s.cats,n.id);return n;
+}
+const cv=(l,id)=>l.cv&&l.cv[id]!=null?l.cv[id]:l.value;
+const vs=l=>l.cats.length?l.cats.map(id=>cv(l,id)):[l.value];
+const kd=l=>{const v=vs(l),p=v.some(x=>x>0),n=v.some(x=>x<0);return p&&n?'Mixed':p?'Positive':'Negative'};
+function tg(x){
+  const t=x.c.target;if(t==null)return'';
+  if(!x.rated)return` · Target ${f(t)}%`;
+  const g=x.b-t;
+  return` · Target ${f(t)}% (<span class="${g>=0?'pos':'neg'}">${g>=0?'met, +'+f(g):f(-g)+' pts short'}</span>)`;
+}
+function hist(s){
+  let L=[...s.logs].sort((a,b)=>b.ts-a.ts),day='',h='';
+  if(hf!=='all')L=L.filter(l=>l.cats.includes(hf));
+  L.forEach(l=>{
+    const d=new Date(l.ts).toLocaleDateString(undefined,{weekday:'long',year:'numeric',month:'long',day:'numeric'});
+    if(d!==day){day=d;h+=`<h3 style="margin-top:12px">${d}</h3>`}
+    h+=ent(l,s);
+  });
+  return h;
+}
+
+const A={
+  newSub:()=>subForm(),editSub:()=>subForm(1),
+  delSub(){const s=cur();if(!confirm(`Delete "${s.title}" and its ${s.logs.length} entries? This cannot be undone.`))return;
+    S.subjects=S.subjects.filter(x=>x!==s);S.cur=S.subjects[0]?.id??null;$('#det').close();render()},
+  addLog:id=>logForm(null,id),editLog:id=>logForm(id),
+  delLog(id){if(!confirm('Delete this entry? Category scores will be recalculated.'))return;const s=cur();s.logs=s.logs.filter(l=>l.id!==id);render()},
+  addCat:()=>catForm(),editCat:id=>catForm(id),
+  quickCat(){const s=cur(),name=$('#qc').value.trim();
+    if(!name)return toast('Type a category name first.');
+    if(s.cats.some(c=>c.name.toLowerCase()===name.toLowerCase()))return toast('That category already exists.');
+    addCat(s,name,'',$('#qcc').value);render()},
+  delCat(id){const s=cur(),c=s.cats.find(c=>c.id===id),n=s.logs.filter(l=>l.cats.includes(id)).length;
+    if(!confirm(`Delete category "${c.name}"? ${n} entr${n===1?'y':'ies'} will be untagged from it (entries are kept). Remaining weights are rescaled to 100%.`))return;
+    s.cats=s.cats.filter(x=>x.id!==id);s.logs.forEach(l=>{l.cats=l.cats.filter(x=>x!==id);if(l.cv)delete l.cv[id]});rebalance(s.cats);render()},
+  equal(){const s=cur();s.cats.forEach(c=>c.weight=100/s.cats.length);rebalance(s.cats);render()},
+  detail:id=>showDet(id),closeDet:()=>$('#det').close(),closeF:()=>$('#dlg').close(),
+  exp(){const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([JSON.stringify(S,null,2)],{type:'application/json'}));
+    a.download='weighted-tracker-'+new Date().toISOString().slice(0,10)+'.json';a.click();setTimeout(()=>URL.revokeObjectURL(a.href),500)},
+  imp:()=>$('#file').click()
+};
+document.addEventListener('click',e=>{const t=e.target.closest('[data-a]');if(t)A[t.dataset.a]?.(t.dataset.id)});
+document.addEventListener('change',e=>{
+  const t=e.target;
+  if(t.id==='sel'){S.cur=t.value;hf='all';render()}
+  else if(t.id==='hf'){hf=t.value;render()}
+  else if(t.dataset.c){const c=cur().cats.find(c=>c.id===t.dataset.c);if(c&&/^#[0-9a-f]{6}$/i.test(t.value)){c.color=t.value;render()}}
+  else if(t.dataset.t){
+    const c=cur().cats.find(c=>c.id===t.dataset.t),v=t.value.trim();
+    if(v==='')c.target=null;
+    else{const n=parseFloat(v);if(!isFinite(n)||n<0||n>100){toast('Target must be a number from 0 to 100, or empty for none.');return render()}c.target=r2(n)}
+    render();
+  }
+  else if(t.dataset.w){
+    const v=parseFloat(t.value),s=cur(),c=s.cats.find(c=>c.id===t.dataset.w);
+    if(!isFinite(v)||v<0||v>100){toast('Weight must be a number from 0 to 100.');return render()}
+    c.weight=v;rebalance(s.cats,c.id);render();
+  }
+});
+document.addEventListener('keydown',e=>{if(e.key==='Enter'&&e.target.id==='qc')A.quickCat()});
+$('#file').onchange=e=>{
+  const fl=e.target.files[0];e.target.value='';if(!fl)return;
+  fl.text().then(t=>{try{
+    const d=clean(JSON.parse(t));
+    if(!confirm(`Import ${d.subjects.length} subject(s)? This replaces all current data.`))return;
+    S=d;render();toast('Import complete.');
+  }catch(x){toast('Import failed: '+x.message)}});
+};
+render();
+</script>
+</body>
+</html>
